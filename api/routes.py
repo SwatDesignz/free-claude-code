@@ -1,6 +1,7 @@
 """FastAPI route handlers."""
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse
 from loguru import logger
 
 from config.settings import Settings
@@ -8,6 +9,7 @@ from core.anthropic import get_token_count
 
 from . import dependencies
 from .dependencies import get_settings, require_api_key
+from .local_admin import build_local_admin_html
 from .models.anthropic import MessagesRequest, TokenCountRequest
 from .models.responses import ModelResponse, ModelsListResponse
 from .services import ClaudeProxyService
@@ -118,6 +120,14 @@ async def root(
         "provider": settings.provider_type,
         "model": settings.model,
     }
+
+
+@router.get("/admin/local", response_class=HTMLResponse)
+async def local_admin(
+    settings: Settings = Depends(get_settings), _auth=Depends(require_api_key)
+):
+    """Render the local-first admin shell."""
+    return HTMLResponse(build_local_admin_html(settings))
 
 
 @router.api_route("/", methods=["HEAD", "OPTIONS"])

@@ -2,12 +2,12 @@
 
 import json
 
-import tiktoken
 from loguru import logger
 
 from .content import get_block_attr
+from .tokenizer import get_cl100k_encoder
 
-ENCODER = tiktoken.get_encoding("cl100k_base")
+ENCODER = get_cl100k_encoder()
 
 
 def get_token_count(
