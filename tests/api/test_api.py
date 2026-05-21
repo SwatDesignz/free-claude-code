@@ -41,6 +41,15 @@ def test_root(client: TestClient):
     assert response.json()["status"] == "ok"
 
 
+def test_local_admin_shell(client: TestClient):
+    response = client.get("/admin/local")
+
+    assert response.status_code == 200
+    assert "text/html" in response.headers.get("content-type", "")
+    assert "Private Local AI Gateway" in response.text
+    assert "CPU-only default" in response.text
+
+
 def test_health(client: TestClient):
     response = client.get("/health")
     assert response.status_code == 200

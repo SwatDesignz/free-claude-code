@@ -1,0 +1,31 @@
+services:
+  local-ai-gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/local-ai/Dockerfile
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8082
+      ANTHROPIC_AUTH_TOKEN: ${ANTHROPIC_AUTH_TOKEN:-local-dev-key}
+      MESSAGING_PLATFORM: none
+      MODEL: ${MODEL:-ollama/llama3.2}
+      OLLAMA_BASE_URL: http://ollama:11434
+    ports:
+      - "8082:8082"
+    volumes:
+      - local_ai_data:/app/data
+    depends_on:
+      - ollama
+
+  ollama:
+    image: ollama/ollama:latest
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+
+volumes:
+  local_ai_data:
+  ollama_models:

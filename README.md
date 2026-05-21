@@ -56,12 +56,24 @@ A lightweight proxy that routes Claude Code's Anthropic API calls to **NVIDIA NI
 
 ### Install `uv`
 
-```bash
-# Recommended installer (works on macOS/Linux without relying on system pip)
-curl -LsSf https://astral.sh/uv/install.sh | sh
+Homebrew (macOS/Linux):
 
-# Keep uv current if it is already installed
-uv self update
+```bash
+# Install uv with Homebrew
+brew install uv
+
+# Upgrade uv when it is already installed with Homebrew
+brew upgrade uv
+
+# This project requires Python 3.14
+uv python install 3.14
+```
+
+Linux fallback (without Homebrew):
+
+```bash
+# Official standalone installer
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # This project requires Python 3.14
 uv python install 3.14
@@ -73,14 +85,11 @@ PowerShell (Windows):
 # Recommended installer (avoids relying on system pip)
 powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
 
-# Keep uv current if it is already installed
-uv self update
-
 # This project requires Python 3.14
 uv python install 3.14
 ```
 
-`pip install uv` can fail on Homebrew-managed Python with `externally-managed-environment` (PEP 668), so prefer the official installer above.
+Use the update command for the installation method you chose; package-manager installs such as Homebrew should be upgraded through that package manager.
 
 ### Clone & Configure
 
