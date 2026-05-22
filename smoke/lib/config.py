@@ -44,6 +44,7 @@ PROVIDER_SMOKE_DEFAULT_MODELS: dict[str, str] = {
     "lmstudio": "lmstudio/local-model",
     "llamacpp": "llamacpp/local-model",
     "ollama": "ollama/llama3.1",
+    "nemoclaw": "nemoclaw/default",
 }
 
 
@@ -185,6 +186,8 @@ class SmokeConfig:
             return bool(self.settings.llamacpp_base_url.strip())
         if provider == "ollama":
             return bool(self.settings.ollama_base_url.strip())
+        if provider == "nemoclaw":
+            return bool(self.settings.nemoclaw_api_key.strip())
         return False
 
 

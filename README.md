@@ -49,6 +49,7 @@ A lightweight proxy that routes Claude Code's Anthropic API calls to **NVIDIA NI
    - **NVIDIA NIM**: [build.nvidia.com/settings/api-keys](https://build.nvidia.com/settings/api-keys)
    - **OpenRouter**: [openrouter.ai/keys](https://openrouter.ai/keys)
    - **DeepSeek**: [platform.deepseek.com/api_keys](https://platform.deepseek.com/api_keys)
+   - **Nemoclaw**: Get your Nemoclaw API key from your provider dashboard
    - **LM Studio**: No API key needed. Run locally with [LM Studio](https://lmstudio.ai)
    - **llama.cpp**: No API key needed. Run `llama-server` locally.
    - **Ollama**: No API key needed. Run locally with [Ollama](https://ollama.com) (`ollama serve`).
@@ -396,6 +397,7 @@ Models use a prefix format: `provider_prefix/model/name`. An invalid prefix caus
 | NVIDIA NIM | `nvidia_nim/...`  | `NVIDIA_NIM_API_KEY` | `integrate.api.nvidia.com/v1` |
 | OpenRouter | `open_router/...` | `OPENROUTER_API_KEY` | `openrouter.ai/api/v1`        |
 | DeepSeek   | `deepseek/...`    | `DEEPSEEK_API_KEY`   | `api.deepseek.com/anthropic`  |
+| Nemoclaw  | `nemoclaw/...`    | `NEMOCLAW_API_KEY`   | `api.nemoclaw.com`            |
 | LM Studio  | `lmstudio/...`    | (none)               | `localhost:1234/v1`           |
 | llama.cpp  | `llamacpp/...`    | (none)               | `localhost:8080/v1`           |
 | Ollama     | `ollama/...`      | (none)               | `localhost:11434`             |
@@ -585,12 +587,15 @@ Configure via `WHISPER_DEVICE` (`cpu` | `cuda` | `nvidia_nim`) and `WHISPER_MODE
 | `ENABLE_HAIKU_THINKING` | Optional thinking switch for Claude Haiku requests; empty inherits `ENABLE_MODEL_THINKING`. | empty |
 | `OPENROUTER_API_KEY` | OpenRouter API key                                                    | required for OpenRouter                           |
 | `DEEPSEEK_API_KEY`   | DeepSeek API key                                                      | required for DeepSeek                             |
+| `NEMOCLAW_API_KEY`   | Nemoclaw API key                                                      | required for Nemoclaw                             |
+| `NEMOCLAW_BASE_URL`  | Nemoclaw server URL                                                   | `https://api.nemoclaw.com`                        |
 | `LM_STUDIO_BASE_URL` | LM Studio server URL                                                  | `http://localhost:1234/v1`                        |
 | `LLAMACPP_BASE_URL`  | llama.cpp server URL                                                  | `http://localhost:8080/v1`                        |
 | `NVIDIA_NIM_PROXY`   | Optional proxy URL for NVIDIA NIM requests (`http://...` or `socks5://...`) | `""` |
 | `OPENROUTER_PROXY`   | Optional proxy URL for OpenRouter requests (`http://...` or `socks5://...`) | `""` |
 | `LMSTUDIO_PROXY`     | Optional proxy URL for LM Studio requests (`http://...` or `socks5://...`) | `""` |
 | `LLAMACPP_PROXY`     | Optional proxy URL for llama.cpp requests (`http://...` or `socks5://...`) | `""` |
+| `NEMOCLAW_PROXY`     | Optional proxy URL for Nemoclaw requests (`http://...` or `socks5://...`) | `""` |
 | `OLLAMA_BASE_URL`    | Ollama server root URL                                               | `http://localhost:11434`                          |
 
 ### Rate Limiting & Timeouts

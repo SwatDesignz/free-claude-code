@@ -101,6 +101,13 @@ class Settings(BaseSettings):
     # ==================== DeepSeek Config ====================
     deepseek_api_key: str = Field(default="", validation_alias="DEEPSEEK_API_KEY")
 
+    # ==================== Nemoclaw Config ====================
+    nemoclaw_api_key: str = Field(default="", validation_alias="NEMOCLAW_API_KEY")
+    nemoclaw_base_url: str = Field(
+        default="https://api.nemoclaw.com",
+        validation_alias="NEMOCLAW_BASE_URL",
+    )
+
     # ==================== Messaging Platform Selection ====================
     # Valid: "telegram" | "discord" | "none"
     messaging_platform: str = Field(
@@ -150,6 +157,7 @@ class Settings(BaseSettings):
     open_router_proxy: str = Field(default="", validation_alias="OPENROUTER_PROXY")
     lmstudio_proxy: str = Field(default="", validation_alias="LMSTUDIO_PROXY")
     llamacpp_proxy: str = Field(default="", validation_alias="LLAMACPP_PROXY")
+    nemoclaw_proxy: str = Field(default="", validation_alias="NEMOCLAW_PROXY")
 
     # ==================== Provider Rate Limiting ====================
     provider_rate_limit: int = Field(default=40, validation_alias="PROVIDER_RATE_LIMIT")
