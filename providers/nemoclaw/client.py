@@ -68,7 +68,7 @@ class NemoclawProvider(BaseProvider):
         return "\n\n".join(parts).strip()
 
     async def _request_chat(self, request: Any) -> str:
-        body = {"input": self._build_input(request), "model": request.model}
+        body = {"input": self._build_input(request)}
         response = await self._global_rate_limiter.execute_with_retry(
             self._client.post,
             "/v1/chat",

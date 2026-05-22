@@ -97,10 +97,9 @@ async def test_stream_response_maps_messages_and_emits_text() -> None:
         ]
 
     kwargs = mock_post.call_args.kwargs
-    assert (
-        kwargs["json"]["input"]
-        == "system: System prompt\n\nassistant: Prior\n\nuser: Next"
-    )
+    assert kwargs["json"] == {
+        "input": "system: System prompt\n\nassistant: Prior\n\nuser: Next"
+    }
     parsed = parse_sse_text("".join(events))
     assert_anthropic_stream_contract(parsed)
     assert text_content(parsed) == "Nemoclaw says hi"
