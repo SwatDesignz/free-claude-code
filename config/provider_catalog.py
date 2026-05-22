@@ -21,6 +21,7 @@ OPENROUTER_DEFAULT_BASE = "https://openrouter.ai/api/v1"
 LMSTUDIO_DEFAULT_BASE = "http://localhost:1234/v1"
 LLAMACPP_DEFAULT_BASE = "http://localhost:8080/v1"
 OLLAMA_DEFAULT_BASE = "http://localhost:11434"
+NEMOCLAW_DEFAULT_BASE = "https://api.nemoclaw.com"
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,6 +102,16 @@ PROVIDER_CATALOG: dict[str, ProviderDescriptor] = {
             "native_anthropic",
             "local",
         ),
+    ),
+    "nemoclaw": ProviderDescriptor(
+        provider_id="nemoclaw",
+        transport_type="anthropic_messages",
+        credential_env="NEMOCLAW_API_KEY",
+        credential_attr="nemoclaw_api_key",
+        default_base_url=NEMOCLAW_DEFAULT_BASE,
+        base_url_attr="nemoclaw_base_url",
+        proxy_attr="nemoclaw_proxy",
+        capabilities=("chat", "streaming"),
     ),
 }
 
