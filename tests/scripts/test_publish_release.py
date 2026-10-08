@@ -85,7 +85,10 @@ class FakeRemote:
             if endpoint.endswith("?per_page=100"):
                 return json.dumps([list(self.releases.values())])
             if endpoint.endswith("/generate-notes"):
-                assert fields["previous_tag_name"] in self.releases
+                assert fields.get("previous_tag_name", "v0.1.0") in {
+                    *self.releases,
+                    "v0.1.0",
+                }
                 return json.dumps({"body": "Generated release notes"})
             if endpoint.endswith("/releases"):
                 assert fields["draft"] == "true"
@@ -308,3 +311,13 @@ def test_no_release_does_not_wait_for_an_unfinished_release(releases):
     before = remote.builds
     remote.publisher().publish(docs)
     assert remote.builds == before
+
+
+def test_first_release_without_tags_is_v0_1_0(releases):
+    _, remote = releases
+    git(remote.repo, "tag", "-d", "v1.2.3")
+    remote.releases.clear()
+    head = remote.advance()
+    remote.publisher().publish(head)
+    assert remote.releases["v0.1.0"]["draft"] is False
+    assert git(remote.repo, "describe", "--tags", "--exact-match", head) == "v0.1.0"
