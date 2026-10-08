@@ -74,7 +74,11 @@ class Publisher:
 
         tags = {}
         # Peeled annotated-tag entries follow their unpeeled entries.
-        for line in git("show-ref", "--tags", "--dereference").splitlines():
+        try:
+            refs = git("show-ref", "--tags", "--dereference")
+        except subprocess.CalledProcessError:
+            refs = ""  # show-ref exits 1 when the repository has no tags
+        for line in refs.splitlines():
             sha, ref = line.split()
             name = ref.removeprefix("refs/tags/").removesuffix("^{}")
             if name.startswith("v") and VERSION.fullmatch(name[1:]):
@@ -87,19 +91,22 @@ class Publisher:
                     raise ValueError(f"Ambiguous release tags at {sha}")
                 previous = names[0]
                 break
-            if release_paths(changed_paths(f"{sha}^", sha)):
+            if tags and release_paths(changed_paths(f"{sha}^", sha)):
                 raise ValueError(
                     f"Earlier release {sha} is unfinished; retry its post-merge run"
                 )
-        if previous is None:
+        if previous is None and tags:
             raise ValueError("No baseline release tag found")
         releases = self.releases()
-        predecessor = releases.get(previous)
-        if not predecessor or predecessor["draft"] or predecessor["prerelease"]:
-            raise ValueError(
-                f"Earlier release {previous} is unfinished; retry its post-merge run"
-            )
-        version = next_version(previous[1:], kind)
+        if previous is None:
+            version = "0.1.0"
+        else:
+            predecessor = releases.get(previous)
+            if not predecessor or predecessor["draft"] or predecessor["prerelease"]:
+                raise ValueError(
+                    f"Earlier release {previous} is unfinished; retry its post-merge run"
+                )
+            version = next_version(previous[1:], kind)
         tag = f"v{version}"
         if any(sha == target and name != tag for name, sha in tags.items()):
             raise ValueError("Target already has another version")
@@ -117,13 +124,10 @@ class Publisher:
             command(["git", "tag", tag, target])
             command(["git", "push", "origin", f"refs/tags/{tag}"])
         if release is None:
-            notes = self.release_api(
-                "/generate-notes",
-                "-f",
-                f"tag_name={tag}",
-                "-f",
-                f"previous_tag_name={previous}",
-            )
+            notes_args = ["-f", f"tag_name={tag}"]
+            if previous is not None:
+                notes_args += ["-f", f"previous_tag_name={previous}"]
+            notes = self.release_api("/generate-notes", *notes_args)
             release = self.release_api(
                 "",
                 "-f",
