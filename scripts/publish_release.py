@@ -75,10 +75,12 @@ class Publisher:
         tags = {}
         # Peeled annotated-tag entries follow their unpeeled entries.
         try:
-            refs = git("show-ref", "--tags", "--dereference")
-        except subprocess.CalledProcessError:
-            refs = ""  # show-ref exits 1 when the repository has no tags
-        for line in refs.splitlines():
+            tag_refs = git("show-ref", "--tags", "--dereference").splitlines()
+        except subprocess.CalledProcessError as error:
+            if error.returncode != 1:
+                raise
+            tag_refs = []
+        for line in tag_refs:
             sha, ref = line.split()
             name = ref.removeprefix("refs/tags/").removesuffix("^{}")
             if name.startswith("v") and VERSION.fullmatch(name[1:]):
