@@ -400,6 +400,15 @@ are configuring.
 
 ## Optional Integrations
 
+### Claude app connector (iOS and Android)
+
+FCC serves a remote MCP endpoint at `/mcp` with an `ask` tool that sends a prompt through your configured FCC model.
+
+1. Expose FCC over public HTTPS (for example with a Cloudflare Tunnel or Tailscale Funnel) and set a proxy auth token.
+2. On [claude.ai](https://claude.ai) (web) go to **Settings → Connectors → Add custom connector** and enter `https://<your-public-url>/mcp`.
+3. The connector syncs to the Claude app on iOS and Android; enable it from the tools menu in a chat.
+
+
 Configure integrations from **Admin UI → Messaging**, then click **Apply**.
 
 <details>
