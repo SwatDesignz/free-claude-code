@@ -197,6 +197,30 @@ def test_nonrelease_never_allocates_or_builds(releases):
     assert not any(c[:2] == ["git", "push"] for c in remote.calls)
 
 
+def test_upstream_merge_uses_incoming_release_title(releases):
+    repo, remote = releases
+    git(repo, "checkout", "-b", "upstream")
+    write(repo, "assets/diagram.svg", "updated")
+    upstream = commit(repo, "patch: Update diagram")
+    git(repo, "checkout", "main")
+    git(
+        repo,
+        "merge",
+        "--no-ff",
+        "upstream",
+        "-m",
+        "Merge branch 'upstream/main' into main",
+    )
+    head = git(repo, "rev-parse", "HEAD")
+    git(repo, "update-ref", "refs/remotes/origin/main", head)
+
+    remote.publisher().publish(head)
+
+    assert not remote.releases["v1.2.4"]["draft"]
+    assert git(repo, "rev-parse", "v1.2.4") == head
+    assert git(repo, "rev-parse", f"{head}^2") == upstream
+
+
 def test_native_preparation_uses_release_commit_despite_dirty_current_checkout(
     releases,
 ):

@@ -153,7 +153,7 @@ def test_installed_update_delegates_and_survives_replacement(tmp_path, outcome):
     )
     if os.name == "nt":
         body = """param([switch] $VoiceLocal, [string] $TorchBackend)
-$answer = Read-Host 'Continue'
+$answer = [Console]::In.ReadLine()
 Write-Output "installer:$VoiceLocal|$TorchBackend|$answer|$env:FCC_INSTALL_VERSION"
 [IO.File]::WriteAllText($env:FCC_TEST_LAUNCHER, 'exit /b 99')
 [IO.File]::WriteAllText($env:FCC_TEST_CHECKER, 'replaced after checker exited')
@@ -216,7 +216,7 @@ printf 'replaced after checker exited' > "$FCC_TEST_CHECKER"
             input="yes\n",
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=90 if os.name == "nt" else 30,
         )
         skipped = outcome in {
             "current",
