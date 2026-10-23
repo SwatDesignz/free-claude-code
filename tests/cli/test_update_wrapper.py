@@ -216,7 +216,7 @@ printf 'replaced after checker exited' > "$FCC_TEST_CHECKER"
             input="yes\n",
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=90 if os.name == "nt" else 30,
         )
         skipped = outcome in {
             "current",
