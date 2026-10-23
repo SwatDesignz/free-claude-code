@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-UV_MINIMUM = "0.12.13"
+from scripts.ci_shards import matrix
+
+UV_MINIMUM = "0.13.4"
 CI_SETUP = Path(".github/actions/ci-environment/action.yml")
 UV_WORKFLOWS = (
     Path(".github/workflows/tests.yml"),
@@ -92,14 +94,14 @@ def test_installer_python_requests_match_package_requirement() -> None:
     assert lock["requires-python"] == requirement
 
 
-def _assert_required_test_matrix(workflow: dict, suite: str) -> None:
-    job = workflow["jobs"][suite]
-    assert job["name"] == f"{suite} (${{{{ matrix.os }}}})"
+def _assert_required_test_matrix(workflow: dict, suite: str, entries: list) -> None:
+    job = workflow["jobs"][f"{suite}-shards"]
     assert job["runs-on"] == "${{ matrix.runner }}"
-    matrix = job["strategy"]["matrix"]
-    assert not matrix.get("exclude")
-    entries = matrix["include"]
-    assert len(entries) == len(REQUIRED_TEST_RUNNERS)
+    assert job["strategy"]["matrix"] == (
+        "${{ fromJSON(needs.prepare-shards.outputs." + suite + "_matrix) }}"
+    )
+    count = int(workflow["env"][f"CI_{suite.upper()}_SHARDS"])
+    assert len(entries) == len(REQUIRED_TEST_RUNNERS) * count
     assert {(entry["os"], entry["runner"]) for entry in entries} == set(
         REQUIRED_TEST_RUNNERS.items()
     )
@@ -108,7 +110,8 @@ def _assert_required_test_matrix(workflow: dict, suite: str) -> None:
 @pytest.mark.parametrize("suite", ("pytest", "playwright"))
 def test_required_test_matrix_covers_supported_platforms(suite: str) -> None:
     workflow = yaml.safe_load(UV_WORKFLOWS[0].read_text(encoding="utf-8"))
-    _assert_required_test_matrix(workflow, suite)
+    count = int(workflow["env"][f"CI_{suite.upper()}_SHARDS"])
+    _assert_required_test_matrix(workflow, suite, matrix(count)["include"])
 
 
 @pytest.mark.parametrize("suite", ("pytest", "playwright"))
@@ -117,10 +120,11 @@ def test_required_test_matrix_rejects_missing_platform(
     suite: str, os_name: str
 ) -> None:
     workflow = yaml.safe_load(UV_WORKFLOWS[0].read_text(encoding="utf-8"))
-    entries = workflow["jobs"][suite]["strategy"]["matrix"]["include"]
+    count = int(workflow["env"][f"CI_{suite.upper()}_SHARDS"])
+    entries = matrix(count)["include"]
     entries[:] = [entry for entry in entries if entry["os"] != os_name]
     with pytest.raises(AssertionError):
-        _assert_required_test_matrix(workflow, suite)
+        _assert_required_test_matrix(workflow, suite, entries)
 
 
 def test_supported_uv_minimum_is_consistent() -> None:
@@ -143,7 +147,7 @@ def test_every_uv_workflow_inherits_malware_check() -> None:
     for workflow_path in UV_WORKFLOWS:
         workflow = workflow_path.read_text(encoding="utf-8")
         assert workflow.count(malware_policy) == 1
-        assert workflow.index(malware_policy) < workflow.index("jobs:\n")
+        assert workflow.index(malware_policy) < workflow.index("\njobs:\n")
 
 
 def test_only_trusted_main_workflow_writes_caches() -> None:
@@ -171,7 +175,7 @@ def test_uv_workflows_share_managed_python_cache_policy() -> None:
         assert "uv-python-v" not in workflow
 
 
-def test_shared_setup_installs_dependencies_except_for_post_merge_jobs() -> None:
+def test_shared_setup_installs_dependencies_for_jobs_running_project_code() -> None:
     setup = yaml.safe_load(CI_SETUP.read_text(encoding="utf-8"))
     assert setup["inputs"]["sync-dependencies"]["default"] == "true"
     sync = next(
@@ -183,10 +187,12 @@ def test_shared_setup_installs_dependencies_except_for_post_merge_jobs() -> None
     assert sync["if"] == "inputs.sync-dependencies == 'true'"
     for path in UV_WORKFLOWS:
         jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
-        for job in jobs.values():
+        for name, job in jobs.items():
             for step in job["steps"]:
                 if step.get("uses") == "./.github/actions/ci-environment":
                     assert step["with"].get("sync-dependencies", "true") == (
-                        "false" if path.name == "post-merge.yml" else "true"
+                        "false"
+                        if path.name == "post-merge.yml" or name == "sdist-rebuild"
+                        else "true"
                     )
                 assert step.get("run") != "uv sync --locked --group dev"

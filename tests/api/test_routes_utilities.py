@@ -3,7 +3,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from free_claude_code.api.dependencies import get_settings
 from free_claude_code.api.ports import ApiServices
 from free_claude_code.application.ports import StopResult
 from free_claude_code.config.settings import Settings
@@ -19,85 +18,6 @@ def app():
 @pytest.fixture
 def client(app):
     return TestClient(app)
-
-
-@pytest.fixture
-def mock_settings():
-    settings = Settings()
-    settings.fast_prefix_detection = True
-    settings.enable_network_probe_mock = True
-    settings.enable_title_generation_skip = True
-    return settings
-
-
-def test_create_message_fast_prefix_detection(app, client, mock_settings):
-    app.dependency_overrides[get_settings] = lambda: mock_settings
-
-    payload = {
-        "model": "claude-3-sonnet",
-        "max_tokens": 100,
-        "messages": [{"role": "user", "content": "What is the prefix?"}],
-    }
-
-    with (
-        patch(
-            "free_claude_code.api.optimization_handlers.is_prefix_detection_request",
-            return_value=(True, "/ask"),
-        ),
-        patch(
-            "free_claude_code.api.optimization_handlers.extract_command_prefix",
-            return_value="/ask",
-        ),
-    ):
-        response = client.post("/v1/messages", json=payload)
-
-    assert response.status_code == 200
-    data = response.json()
-    assert "/ask" in data["content"][0]["text"]
-
-    app.dependency_overrides.clear()
-
-
-def test_create_message_quota_check_mock(app, client, mock_settings):
-    app.dependency_overrides[get_settings] = lambda: mock_settings
-
-    payload = {
-        "model": "claude-3-sonnet",
-        "max_tokens": 100,
-        "messages": [{"role": "user", "content": "quota check"}],
-    }
-
-    with patch(
-        "free_claude_code.api.optimization_handlers.is_quota_check_request",
-        return_value=True,
-    ):
-        response = client.post("/v1/messages", json=payload)
-
-    assert response.status_code == 200
-    assert "Quota check passed" in response.json()["content"][0]["text"]
-
-    app.dependency_overrides.clear()
-
-
-def test_create_message_title_generation_skip(app, client, mock_settings):
-    app.dependency_overrides[get_settings] = lambda: mock_settings
-
-    payload = {
-        "model": "claude-3-sonnet",
-        "max_tokens": 100,
-        "messages": [{"role": "user", "content": "generate title"}],
-    }
-
-    with patch(
-        "free_claude_code.api.optimization_handlers.is_title_generation_request",
-        return_value=True,
-    ):
-        response = client.post("/v1/messages", json=payload)
-
-    assert response.status_code == 200
-    assert "Conversation" in response.json()["content"][0]["text"]
-
-    app.dependency_overrides.clear()
 
 
 def test_create_message_empty_messages_returns_400(client):
@@ -140,7 +60,17 @@ def test_count_tokens_endpoint(client):
 
 
 @pytest.mark.parametrize("prefix", ["", "anthropic/", "claude-3-freecc-no-thinking/"])
-def test_count_tokens_retired_model_uses_configured_default(prefix):
+@pytest.mark.parametrize(
+    "ref,target",
+    [
+        ("github_models/vendor/opus", "groq/default"),
+        (
+            "nvidia_nim/nvidia/nemotron-3-super-120b-a12b",
+            "nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b",
+        ),
+    ],
+)
+def test_count_tokens_retired_model_uses_replacement(prefix, ref, target):
     test_app = create_test_app(
         Settings(MODEL="groq/default", MODEL_OPUS="deepseek/opus")
     )
@@ -151,7 +81,7 @@ def test_count_tokens_retired_model_uses_configured_default(prefix):
         response = TestClient(test_app).post(
             "/v1/messages/count_tokens",
             json={
-                "model": f"{prefix}github_models/vendor/opus",
+                "model": f"{prefix}{ref}",
                 "messages": [{"role": "user", "content": "hi"}],
             },
         )
@@ -162,8 +92,8 @@ def test_count_tokens_retired_model_uses_configured_default(prefix):
         for call in trace.call_args_list
         if call.kwargs["stage"] == "routing"
     )
-    assert routed["provider_model_ref"] == "groq/default"
-    assert routed["gateway_model"] == f"{prefix}github_models/vendor/opus"
+    assert routed["provider_model_ref"] == target
+    assert routed["gateway_model"] == f"{prefix}{ref}"
 
 
 def test_count_tokens_error_returns_500(client):

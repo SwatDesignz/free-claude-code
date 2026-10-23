@@ -104,7 +104,7 @@ def test_non_version_entrypoint_delegates_to_server_command() -> None:
     with patch.object(commands, "serve") as command:
         entrypoints.serve(())
 
-    command.assert_called_once_with()
+    command.assert_called_once_with(console_logging=True)
 
 
 def test_explicit_open_admin_waits_for_owned_http_ready():
@@ -159,7 +159,7 @@ def test_server_startup_repairs_invalid_managed_provider_proxy(
     managed.write_text(
         "\n".join(
             (
-                "FCC_CONFIG_SCHEMA=1",
+                "FCC_CONFIG_SCHEMA=2",
                 "MODEL=nvidia_nim/test-model",
                 f"OPENAI_PROXY={invalid_proxy}",
                 "",
@@ -270,7 +270,7 @@ def test_load_server_settings_leaves_process_owned_invalid_proxy_explicit(
     managed = managed_env_path()
     managed.parent.mkdir(parents=True)
     managed.write_text(
-        "FCC_CONFIG_SCHEMA=1\nOPENAI_PROXY=invalid://managed-proxy\n",
+        "FCC_CONFIG_SCHEMA=2\nOPENAI_PROXY=invalid://managed-proxy\n",
         encoding="utf-8",
     )
     baseline = managed.read_bytes()

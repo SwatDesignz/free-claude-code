@@ -9,6 +9,8 @@ import subprocess
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpx
+
 from free_claude_code.config.loader import ManagedConfigStore
 from free_claude_code.config.paths import (
     claude_desktop_disconnect_path,
@@ -28,7 +30,10 @@ from free_claude_code.harnesses import (
 from free_claude_code.providers.github_copilot.auth import CopilotAuthManager
 from free_claude_code.providers.openai_codex.auth import saved_connection_state
 from free_claude_code.providers.runtime.config import has_provider_configuration
-from free_claude_code.providers.runtime.discovery import referenced_provider_ids
+from free_claude_code.providers.runtime.discovery import (
+    referenced_provider_ids,
+    safe_discovery_failure_message,
+)
 
 RUNTIME_FIELDS = (
     "host",
@@ -42,11 +47,6 @@ RUNTIME_FIELDS = (
     "http_read_timeout",
     "http_write_timeout",
     "http_connect_timeout",
-    "fast_prefix_detection",
-    "enable_network_probe_mock",
-    "enable_title_generation_skip",
-    "enable_suggestion_mode_skip",
-    "enable_filepath_extraction_mock",
     "log_level",
     "log_raw_api_payloads",
     "log_raw_sse_events",
@@ -187,7 +187,7 @@ def settings_report(settings: Settings, accounts: dict[str, str]) -> dict[str, A
             "configured": True,
             "referenced": definition.provider_id in referenced,
             "base_url": _url_summary(definition.base_url),
-            "api_key_configured": bool(definition.api_key),
+            "api_key_configured": bool(definition.api_keys),
             "api_format": definition.api_format,
             "reasoning_format": definition.reasoning_format,
             "reasoning_history_format": definition.reasoning_history_format,
@@ -199,7 +199,7 @@ def settings_report(settings: Settings, accounts: dict[str, str]) -> dict[str, A
     return {
         "providers": providers,
         "runtime": runtime,
-        "model_routing": {name: getattr(settings, name) for name in ROUTING_FIELDS},
+        "model_routing": settings.model_dump(mode="json", include=set(ROUTING_FIELDS)),
         "reasoning": {name: getattr(settings, name) for name in REASONING_FIELDS},
         "web_tools": {name: getattr(settings, name) for name in WEB_FIELDS},
     }
@@ -213,7 +213,6 @@ def integration_report(settings: Settings) -> dict[str, Any]:
         ),
         "claude-vscode": lambda: claude_integration.configure(
             claude_integration.settings_path(),
-            claude_integration.claude_state_path(),
             url,
             token,
         ),
@@ -294,6 +293,46 @@ def harness_report() -> dict[str, Any]:
     return result
 
 
+def model_discovery_report(settings: Settings) -> dict[str, Any]:
+    """Read a safe snapshot from an existing local server without refreshing it."""
+    unavailable = {"status": "unavailable", "source": "running_server"}
+    try:
+        url = local_proxy_root_url(settings)
+        if urlsplit(url).hostname not in {"127.0.0.1", "localhost", "::1"}:
+            return unavailable
+        response = httpx.get(
+            f"{url}/admin/api/status",
+            timeout=2.0,
+            trust_env=False,
+            follow_redirects=False,
+        )
+        response.raise_for_status()
+        payload = response.json()
+    except httpx.HTTPError, httpx.InvalidURL, ValueError:
+        return unavailable
+    if not isinstance(payload, dict) or payload.get("status") != "running":
+        return unavailable
+    startup = payload.get("startup")
+    if not isinstance(startup, dict):
+        return unavailable
+    states, errors = startup.get("providers"), startup.get("provider_errors")
+    if not isinstance(states, dict) or not isinstance(errors, dict):
+        return unavailable
+    providers = {}
+    for provider_id, state in states.items():
+        if provider_id not in PROVIDER_CATALOG and not re.fullmatch(
+            r"custom_[a-f0-9]{32}", provider_id
+        ):
+            continue
+        if state not in ("starting", "ready", "failed", "unavailable"):
+            continue
+        row = {"state": state}
+        if state == "failed":
+            row["message"] = safe_discovery_failure_message(errors.get(provider_id))
+        providers[provider_id] = row
+    return {"status": "available", "source": "running_server", "providers": providers}
+
+
 def collect_report() -> dict[str, Any]:
     report = {
         "version": package_version(),
@@ -315,6 +354,7 @@ def collect_report() -> dict[str, Any]:
         "web_tools": None,
         "integrations": None,
         "harnesses": {},
+        "model_discovery": {"status": "unavailable", "source": "running_server"},
         "errors": [],
     }
     store = ManagedConfigStore()
@@ -335,6 +375,7 @@ def collect_report() -> dict[str, Any]:
             copilot if copilot in {"connected", "disconnected"} else "unavailable"
         )
         report.update(settings_report(settings, accounts))
+        report["model_discovery"] = model_discovery_report(settings)
         report["integrations"] = integration_report(settings)
         for name, state in accounts.items():
             if state not in {"connected", "disconnected"}:

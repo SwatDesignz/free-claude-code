@@ -5,12 +5,14 @@ import math
 import random
 import time
 import uuid
-from collections import deque
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Generator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from enum import StrEnum
+from functools import partial
 from typing import TypeVar
 
 from loguru import logger
@@ -20,6 +22,7 @@ from free_claude_code.core.stream_delivery import (
     current_stream_delivery,
 )
 from free_claude_code.core.trace import trace_event
+from free_claude_code.providers.admission_capacity import ProviderCapacityLimiter
 from free_claude_code.providers.admission_policy import ProviderAdmissionLimits
 from free_claude_code.providers.failure_policy import (
     ProviderFailureOverride,
@@ -34,6 +37,23 @@ UPSTREAM_TRANSIENT_TOTAL_ATTEMPTS = 5
 DEFAULT_UPSTREAM_BASE_DELAY = 2.0
 DEFAULT_UPSTREAM_MAX_DELAY = 60.0
 DEFAULT_UPSTREAM_JITTER = 1.0
+
+_quiet_discovery = ContextVar("quiet_discovery_recovery_logs", default=False)
+
+
+@contextmanager
+def quiet_discovery_recovery_logs(enabled: bool) -> Generator[None]:
+    """Keep optional probe retries at debug level without silencing other tasks."""
+    token = _quiet_discovery.set(enabled)
+    try:
+        yield
+    finally:
+        _quiet_discovery.reset(token)
+
+
+def _log_recovery(message: str, *args: object) -> None:
+    log = logger.debug if _quiet_discovery.get() else logger.warning
+    log(message, *args)
 
 
 class ProviderOperationKind(StrEnum):
@@ -178,8 +198,16 @@ class ProviderExecution:
                     return result
                 finally:
                     await attempt.aclose()
-        except asyncio.CancelledError:
+        except asyncio.CancelledError as cancelled:
             self.abandon()
+            # A discovery deadline can interrupt retry backoff. Retain the
+            # provider failure so diagnostics can distinguish absence from DNS,
+            # TLS or HTTP failures while cancellation still propagates.
+            if (
+                operation_kind is ProviderOperationKind.MODEL_DISCOVERY
+                and self._last_failure is not None
+            ):
+                raise cancelled from self._last_failure
             raise
         except Exception as error:
             self.fail(error)
@@ -412,7 +440,7 @@ class ProviderAttempt:
 
 
 class ProviderAdmissionController:
-    """Coordinate one provider's rate, concurrency, and recovery state.
+    """Coordinate one credential's recovery within a provider capacity budget.
 
     Normal attempts pass through a strict sliding window and concurrency bulkhead.
     The first shared transient failure opens one recovery episode. Exactly one
@@ -431,6 +459,7 @@ class ProviderAdmissionController:
         base_delay: float = DEFAULT_UPSTREAM_BASE_DELAY,
         max_delay: float = DEFAULT_UPSTREAM_MAX_DELAY,
         jitter: float = DEFAULT_UPSTREAM_JITTER,
+        capacity: ProviderCapacityLimiter | None = None,
     ) -> None:
         limits = ProviderAdmissionLimits(rate_limit, rate_window, max_concurrency)
         if max_attempts <= 0:
@@ -447,11 +476,7 @@ class ProviderAdmissionController:
         self._base_delay = base_delay
         self._max_delay = max_delay
         self._jitter = jitter
-        self._limits = limits
-        self._admission_times: deque[float] = deque()
-        self._last_discarded_at: float | None = None
-        self._active_attempts = 0
-        self._capacity_changed = asyncio.Event()
+        self._capacity = capacity or ProviderCapacityLimiter(limits)
         self._condition = asyncio.Condition()
         self._episode: _RecoveryEpisode | None = None
         self._next_generation = 1
@@ -497,7 +522,9 @@ class ProviderAdmissionController:
             slot_acquired = False
             claim: _AttemptClaim | None = None
             try:
-                admitted = await self._acquire_capacity(execution, permit)
+                admitted = await self._capacity.acquire(
+                    partial(self._permit_is_current, execution, permit)
+                )
                 if not admitted:
                     await self._abandon_probe_permit(execution, permit)
                     continue
@@ -577,7 +604,7 @@ class ProviderAdmissionController:
                 continue
             try:
                 if sleep_delay > 0:
-                    logger.warning(
+                    _log_recovery(
                         "Provider {} recovery active, waiting {:.1f}s for one probe",
                         self._provider_name,
                         sleep_delay,
@@ -769,7 +796,7 @@ class ProviderAdmissionController:
 
         label = self._failure_label(status, error)
         if became_leader:
-            logger.warning(
+            _log_recovery(
                 "{}, attempt {}/{} failed; one provider recovery probe in {:.1f}s",
                 label,
                 execution.attempts_started,
@@ -802,7 +829,7 @@ class ProviderAdmissionController:
                 max_attempts=execution.max_attempts,
             )
         else:
-            logger.warning(
+            _log_recovery(
                 "{} retry exhausted (attempts={})",
                 label,
                 execution.attempts_started,
@@ -896,60 +923,14 @@ class ProviderAdmissionController:
 
     def reconfigure(self, limits: ProviderAdmissionLimits) -> None:
         """Update capacity without resetting occupancy, history, or recovery."""
-        if limits != self._limits:
-            self._limits = limits
-            self._wake_capacity()
-
-    def _wake_capacity(self) -> None:
-        changed = self._capacity_changed
-        self._capacity_changed = asyncio.Event()
-        changed.set()
+        self._capacity.reconfigure(limits)
 
     def _notify_recovery_waiters(self) -> None:
         self._condition.notify_all()
-        self._wake_capacity()
-
-    async def _acquire_capacity(
-        self, execution: ProviderExecution, permit: _GatePermit
-    ) -> bool:
-        while self._permit_is_current(execution, permit):
-            changed = self._capacity_changed
-            now = time.monotonic()
-            limits = self._limits
-            cutoff = now - limits.rate_window
-            while self._admission_times and self._admission_times[0] <= cutoff:
-                self._last_discarded_at = self._admission_times.popleft()
-
-            ready_at = now
-            if self._last_discarded_at is not None:
-                ready_at = max(ready_at, self._last_discarded_at + limits.rate_window)
-            if len(self._admission_times) >= limits.rate_limit:
-                ready_at = max(
-                    ready_at,
-                    self._admission_times[-limits.rate_limit] + limits.rate_window,
-                )
-            if self._active_attempts < limits.max_concurrency and ready_at <= now:
-                self._admission_times.append(now)
-                self._active_attempts += 1
-                return True
-
-            # Occupancy changes explicitly wake us. Avoid an expired rate timer
-            # spinning while all concurrency slots remain occupied.
-            delay = (
-                max(0.0, ready_at - now)
-                if self._active_attempts < limits.max_concurrency
-                else None
-            )
-            try:
-                async with asyncio.timeout(delay):
-                    await changed.wait()
-            except TimeoutError:
-                pass
-        return False
+        self._capacity.wake_waiters()
 
     def _release_concurrency(self) -> None:
-        self._active_attempts -= 1
-        self._wake_capacity()
+        self._capacity.release()
 
     def _retry_delay(self, error: Exception, attempt: int) -> float:
         exponent = max(0, attempt - 1)
