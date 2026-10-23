@@ -66,6 +66,9 @@ class Publisher:
         if target not in history:
             raise ValueError("Release target is not on main's first-parent history")
         title = git("show", "-s", "--format=%s", target)
+        parents = git("rev-list", "--parents", "-n", "1", target).split()
+        if len(parents) == 3 and title.startswith("Merge "):
+            title = git("show", "-s", "--format=%s", f"{target}^2")
         kind = release_kind(title, changed_paths(f"{target}^", target))
         if kind is None:
             print(f"No release for {target}")
