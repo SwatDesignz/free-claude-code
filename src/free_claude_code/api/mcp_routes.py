@@ -96,10 +96,16 @@ async def _dispatch(
 ) -> dict[str, Any] | None:
     if not isinstance(message, dict):
         return _error(None, -32600, "Invalid request")
+
+    # JSON-RPC notifications omit the `id` member entirely. An explicit `"id": null`
+    # is still a request and should receive a response with `id` set to null.
+    has_id = "id" in message
     msg_id = message.get("id")
     method = message.get("method")
-    if msg_id is None:  # notification
+
+    if not has_id:  # notification
         return None
+
     if method == "initialize":
         return _result(
             msg_id,
