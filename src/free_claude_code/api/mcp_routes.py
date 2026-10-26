@@ -70,7 +70,7 @@ async def _call_ask(
     if isinstance(response, Response):
         try:
             payload = json.loads(bytes(response.body))
-        except AttributeError, ValueError:
+        except (AttributeError, ValueError):
             return _text_result("Unexpected response from model.", is_error=True)
         if response.status_code >= 400:
             detail = (
